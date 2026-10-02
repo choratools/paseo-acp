@@ -1,0 +1,16 @@
+{
+  "name": "@choratools/paseo-acp",
+  "version": "0.1.0",
+  "description": "Community Antigravity and ZCode ACP adapters with a Paseo setup CLI",
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "bin": {
+    "paseo-acp": "bin/paseo-acp.mjs",
+    "antigravity-acp": "packages/antigravity-acp/bridge.mjs",
+    "zcode-acp": "packages/zcode-acp/bridge.mjs"
+  },
+  "files": ["bin/", "lib/", "packages/*/*.mjs", "packages/*/README.md", "docs/", "assets/", "README.ko.md"],
+  "repository": { "type": "git", "url": "https://github.com/choratools/paseo-acp.git" },
+  "homepage": "https://github.com/choratools/paseo-acp#readme",
+  "bugs": { "url": "https://github.com/choratools/paseo-acp/issues" }
+}
