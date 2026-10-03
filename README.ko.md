@@ -41,6 +41,13 @@ paseo-acp doctor
 
 현재는 소스에서 설치합니다. npm 레지스트리에는 아직 게시하지 않았습니다.
 
+> **[Volta](https://volta.sh)를 사용하나요?** 폴더 대신 타르볼을 설치하세요. `npm install -g .`은 심볼릭 링크를 남기는데, Volta가 설치를 도구 저장소로 옮기면 링크가 깨져 `Could not execute command` 오류가 납니다 ([volta-cli/volta#2113](https://github.com/volta-cli/volta/issues/2113)):
+>
+> ```sh
+> npm pack
+> npm install -g ./choratools-paseo-acp-*.tgz
+> ```
+
 ### 3. Paseo 연결
 
 ```sh
