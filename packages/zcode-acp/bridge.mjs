@@ -341,7 +341,7 @@ export class Bridge {
       await this.runtime.call('session/close', { sessionId: nativeId });
       throw fault('Loaded session belongs to a different directory');
     }
-    const session = { id, nativeId, cwd: params.cwd, lastSeq: 0, tools: new Map(), turn: null, mutating: false,
+    const session = { id, nativeId, cwd: params.cwd, lastSeq: 0, tools: new Map(), turn: null, turnQueue: Promise.resolve(), mutating: false,
       planEnabled: !recreated && saved?.mode === 'plan',
       everPrompted: saved?.everPrompted ?? (load && !recreated), createdAt: saved?.createdAt || new Date().toISOString() };
     this.sessions.set(id, session);
@@ -409,6 +409,22 @@ export class Bridge {
   async prompt(session, params) {
     const content = this.promptText(params.prompt);
     if (!content.trim()) throw fault('Prompt is empty');
+    if (session.turn && !session.turn.cancelRequested) throw fault('Session is busy', -32000);
+    // Paseo can submit a follow-up while it is still resolving cancellation of
+    // the previous prompt. Serialize admissions so app-server never receives
+    // session/send while the preceding native turn is active.
+    const previous = session.turnQueue;
+    let release;
+    session.turnQueue = new Promise(resolve => { release = resolve; });
+    await previous;
+    try {
+      return await this.runPrompt(session, content);
+    } finally {
+      release();
+    }
+  }
+
+  async runPrompt(session, content) {
     const inputId = randomUUID();
     let resolve, reject;
     const complete = new Promise((yes, no) => { resolve = yes; reject = no; });
@@ -440,6 +456,7 @@ export class Bridge {
     if (!turn) return;
     session.turn = null;
     clearTimeout(turn.cancelTimer);
+    turn.resolveAfterStop?.();
     for (const [id, entry] of this.clientRequests) {
       if (entry.sessionId === session.id) {
         this.clientRequests.delete(id);
@@ -464,7 +481,11 @@ export class Bridge {
       // leaving commands executing after the client thinks the turn ended.
       this.runtime.fail(fault('ZCode cancellation did not complete', -32603));
     }, cancelTimeout);
+    const turn = session.turn;
     await this.runtime.call('session/stop', { sessionId: session.nativeId });
+    // Stop acknowledgement can precede turn.completed. Keep a queued prompt
+    // behind the native completion event to avoid ZCode's -32010 overlap error.
+    if (turn && session.turn === turn) await new Promise(resolve => { turn.resolveAfterStop = resolve; });
     return {};
   }
 
@@ -532,7 +553,7 @@ export class Bridge {
         }
         return { sessions: [...sessions.values()] };
       }
-      case 'session/prompt': return this.prompt(this.session(params, true), params);
+      case 'session/prompt': return this.prompt(this.session(params), params);
       case 'session/set_mode': await this.configure(this.session(params, true), 'mode', params.modeId); return {};
       case 'session/set_model': await this.configure(this.session(params, true), 'model', params.modelId); return {};
       case 'session/set_config_option': return this.configure(this.session(params, true), params.configId, params.value);

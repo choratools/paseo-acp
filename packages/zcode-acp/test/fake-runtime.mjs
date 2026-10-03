@@ -78,6 +78,10 @@ readline.createInterface({ input: process.stdin }).on('line', line => {
     case 'session/send': {
       const input = params.input ?? params.prompt ?? params.message ?? params;
       const text = typeof input === 'string' ? input : (input.text ?? input.content ?? input.prompt ?? params.text ?? JSON.stringify(input));
+      if (turns.has(params.sessionId)) {
+        output({ id, error: { code: -32010, message: 'A prompt is already running for this session' } });
+        break;
+      }
       const turn = { ...params, answer: `answer:${text}` };
       turns.set(params.sessionId, turn);
       reply({ accepted: true, sessionId: params.sessionId });
@@ -136,7 +140,7 @@ readline.createInterface({ input: process.stdin }).on('line', line => {
     case 'session/stop': {
       reply({ accepted: true });
       const turn = turns.get(params.sessionId);
-      if (turn) setTimeout(() => finish(turn, 'cancelled'), 15);
+      if (turn) setTimeout(() => finish(turn, 'cancelled'), process.env.ZCODE_TEST_STOP_DELAY ? Number(process.env.ZCODE_TEST_STOP_DELAY) : 15);
       break;
     }
     case 'session/close': reply({}); break;

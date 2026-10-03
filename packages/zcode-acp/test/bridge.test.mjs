@@ -348,6 +348,21 @@ test('overlapping prompts are rejected and cancel notification has no response',
   assert.equal((await h.nativeLog()).filter(value => value.method === 'session/send').length, 1);
 });
 
+test('follow-up prompt waits for native cancellation completion', async t => {
+  const h = await start(t, { runtimeEnv: { ZCODE_TEST_STOP_DELAY: '80' } });
+  const first = prompt(h, 'slow');
+  await waitFor(async () => (await h.nativeLog()).some(value => value.method === 'session/send'));
+  h.send({ jsonrpc: '2.0', method: 'session/cancel', params: { sessionId: h.sessionId } });
+  const followUp = prompt(h, 'queued-follow-up');
+  const [cancelled, next] = await Promise.all([first, followUp]);
+  assert.equal(cancelled.error, undefined, JSON.stringify(cancelled));
+  assert.equal(cancelled.result.stopReason, 'cancelled');
+  assert.equal(next.error, undefined, JSON.stringify(next));
+  assert.equal(next.result.stopReason, 'end_turn');
+  const sends = (await h.nativeLog()).filter(value => value.method === 'session/send');
+  assert.deepEqual(sends.map(value => value.params.content), ['slow', 'queued-follow-up']);
+});
+
 test('native turn errors and runtime crashes are not reported as cancellation', async t => {
   const h = await start(t);
   for (const text of ['error', 'crash']) {
