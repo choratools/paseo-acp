@@ -42,6 +42,13 @@ paseo-acp doctor
 
 This installs from source. The package has not been published to the npm registry.
 
+> **Using [Volta](https://volta.sh)?** Install a tarball instead of the folder. `npm install -g .` leaves a symlink that breaks when Volta moves the install into its tool store, so the commands fail with `Could not execute command` ([volta-cli/volta#2113](https://github.com/volta-cli/volta/issues/2113)):
+>
+> ```sh
+> npm pack
+> npm install -g ./choratools-paseo-acp-*.tgz
+> ```
+
 ### 3. Connect to Paseo
 
 ```sh
