@@ -11,6 +11,7 @@
   <a href="#빠른-시작">빠른 시작</a> ·
   <a href="#어댑터">어댑터</a> ·
   <a href="docs/configuration.md">설정 안내</a> ·
+  <a href="CHANGELOG.md">업데이트 로그</a> ·
   <a href="README.md">English</a>
 </p>
 

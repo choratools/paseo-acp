@@ -11,6 +11,7 @@
   <a href="#quick-start">Quick start</a> ·
   <a href="#adapters">Adapters</a> ·
   <a href="docs/configuration.md">Configuration</a> ·
+  <a href="CHANGELOG.md">Update Log</a> ·
   <a href="README.ko.md">한국어</a>
 </p>
 
