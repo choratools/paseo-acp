@@ -394,21 +394,55 @@ export class Bridge {
     }
   }
 
-  promptText(prompt) {
-    if (!Array.isArray(prompt)) throw fault('prompt must be an ACP content block array');
-    return prompt.map(block => {
-      if (block?.type === 'text' && typeof block.text === 'string') return block.text;
-      if (block?.type === 'resource' && typeof block.resource?.text === 'string') {
-        return `${block.resource.uri || 'Resource'}\n${block.resource.text}`;
+  attachmentName(kind, index, mimeType) {
+    const extensions = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp', 'image/avif': 'avif',
+      'audio/mpeg': 'mp3', 'audio/mp4': 'm4a', 'audio/wav': 'wav', 'audio/x-wav': 'wav', 'audio/wave': 'wav', 'audio/webm': 'weba', 'audio/ogg': 'ogg' };
+    const extension = extensions[String(mimeType).toLowerCase()];
+    return extension ? `${kind}-${index}.${extension}` : `${kind}-${index}`;
+  }
+
+  mediaAttachment(block, index) {
+    if (block?.type === 'image' || block?.type === 'audio') {
+      if (typeof block.data !== 'string' || !block.data.trim() || typeof block.mimeType !== 'string' || !block.mimeType.trim()) {
+        throw fault(`Invalid ${block.type} content block`);
       }
-      if (block?.type === 'resource_link' && typeof block.uri === 'string') return `${block.name || 'Resource'}: ${block.uri}`;
+      const data = block.data.replace(/\s+/g, '');
+      if (!/^[A-Za-z0-9+/]*={0,2}$/.test(data)) throw fault(`Invalid ${block.type} content block`);
+      return { kind: block.type, filename: this.attachmentName(block.type, index, block.mimeType), mimeType: block.mimeType.trim(),
+        sizeBytes: Buffer.byteLength(data, 'base64'), dataBase64: data };
+    }
+    if (block?.type === 'resource' && typeof block.resource?.blob === 'string' && block.resource.blob.trim()) {
+      const mimeType = (typeof block.resource.mimeType === 'string' && block.resource.mimeType.trim()) || 'application/octet-stream';
+      const kind = mimeType.toLowerCase() === 'application/pdf' ? 'pdf' : 'file';
+      const base = typeof block.resource.uri === 'string' ? decodeURIComponent(new URL(block.resource.uri, 'file:///').pathname.split('/').pop() || '') : '';
+      const filename = base.replace(/[^\w.\-]+/g, '').replace(/^[.\-]+/, '') || `resource-${index}`;
+      const blob = block.resource.blob.replace(/\s+/g, '');
+      return { kind, filename, mimeType, sizeBytes: Buffer.byteLength(blob, 'base64'), dataBase64: blob };
+    }
+    return null;
+  }
+
+  promptParts(prompt) {
+    if (!Array.isArray(prompt)) throw fault('prompt must be an ACP content block array');
+    const texts = [], attachments = [];
+    prompt.forEach((block, position) => {
+      if (block?.type === 'text' && typeof block.text === 'string') { texts.push(block.text); return; }
+      if (block?.type === 'resource' && typeof block.resource?.text === 'string') {
+        texts.push(`${block.resource.uri || 'Resource'}\n${block.resource.text}`);
+        return;
+      }
+      if (block?.type === 'resource_link' && typeof block.uri === 'string') { texts.push(`${block.name || 'Resource'}: ${block.uri}`); return; }
+      const attachment = this.mediaAttachment(block, position + 1);
+      if (attachment) { attachments.push(attachment); return; }
       throw fault(`Unsupported prompt content: ${block?.type || 'unknown'}`);
-    }).join('\n');
+    });
+    return { text: texts.join('\n'), attachments };
   }
 
   async prompt(session, params) {
-    const content = this.promptText(params.prompt);
-    if (!content.trim()) throw fault('Prompt is empty');
+    const { text, attachments } = this.promptParts(params.prompt);
+    if (!text.trim() && !attachments.length) throw fault('Prompt is empty');
+    const content = text.trim() ? text : ' ';
     if (session.turn && !session.turn.cancelRequested) throw fault('Session is busy', -32000);
     // Paseo can submit a follow-up while it is still resolving cancellation of
     // the previous prompt. Serialize admissions so app-server never receives
@@ -423,14 +457,14 @@ export class Bridge {
     await previous;
     try {
       if (pending.cancelled) return { stopReason: 'cancelled' };
-      return await this.runPrompt(session, content);
+      return await this.runPrompt(session, content, attachments);
     } finally {
       if (session.pendingPrompt === pending) session.pendingPrompt = null;
       release();
     }
   }
 
-  async runPrompt(session, content) {
+  async runPrompt(session, content, attachments = []) {
     const inputId = randomUUID();
     let resolve, reject;
     const complete = new Promise((yes, no) => { resolve = yes; reject = no; });
@@ -449,7 +483,9 @@ export class Bridge {
         }
         return { accepted: true };
       }
-      return this.runtime.call('session/send', { sessionId: session.nativeId, content, inputId });
+      return this.runtime.call('session/send', {
+        sessionId: session.nativeId, content, inputId, ...(attachments.length ? { attachments } : {}),
+      });
     })().then(result => {
       if (result?.accepted !== true) throw fault('ZCode did not accept the prompt', -32603);
     }).catch(error => { if (session.turn === turn) this.finish(session, undefined, error); throw error; });

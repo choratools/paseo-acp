@@ -363,6 +363,57 @@ test('follow-up prompt waits for native cancellation completion', async t => {
   assert.deepEqual(sends.map(value => value.params.content), ['slow', 'queued-follow-up']);
 });
 
+test('image and audio prompt blocks are forwarded as native attachments', async t => {
+  const h = await start(t);
+  const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+  const reply = await h.request('session/prompt', { sessionId: h.sessionId, prompt: [
+    { type: 'text', text: 'describe these' },
+    { type: 'image', data: png, mimeType: 'image/png' },
+    { type: 'audio', data: 'AAAA', mimeType: 'audio/mpeg' },
+  ] });
+  assert.equal(reply.error, undefined, JSON.stringify(reply));
+  assert.equal(reply.result.stopReason, 'end_turn');
+  const sends = (await h.nativeLog()).filter(value => value.method === 'session/send');
+  assert.equal(sends.length, 1);
+  assert.equal(sends[0].params.content, 'describe these');
+  assert.deepEqual(sends[0].params.attachments, [
+    { kind: 'image', filename: 'image-2.png', mimeType: 'image/png', sizeBytes: Buffer.byteLength(png, 'base64'), dataBase64: png },
+    { kind: 'audio', filename: 'audio-3.mp3', mimeType: 'audio/mpeg', sizeBytes: 3, dataBase64: 'AAAA' },
+  ]);
+});
+
+test('image-only and blob-resource prompts are accepted without text', async t => {
+  const h = await start(t);
+  const imageOnly = await h.request('session/prompt', { sessionId: h.sessionId, prompt: [{ type: 'image', data: 'iVBOR', mimeType: 'image/png' }] });
+  assert.equal(imageOnly.error, undefined, JSON.stringify(imageOnly));
+  assert.equal(imageOnly.result.stopReason, 'end_turn');
+  const blob = await h.request('session/prompt', { sessionId: h.sessionId, prompt: [
+    { type: 'resource', resource: { uri: 'file:///tmp/report v2.pdf', mimeType: 'application/pdf', blob: 'JVBERi0=' } },
+  ] });
+  assert.equal(blob.error, undefined, JSON.stringify(blob));
+  const sends = (await h.nativeLog()).filter(value => value.method === 'session/send');
+  assert.equal(sends[0].params.content, ' ');
+  assert.equal(sends[0].params.attachments.length, 1);
+  assert.deepEqual(sends[1].params.attachments, [
+    { kind: 'pdf', filename: 'reportv2.pdf', mimeType: 'application/pdf', sizeBytes: Buffer.byteLength('JVBERi0=', 'base64'), dataBase64: 'JVBERi0=' },
+  ]);
+});
+
+test('malformed media blocks are rejected without reaching the native runtime', async t => {
+  const h = await start(t);
+  for (const block of [
+    { type: 'image', mimeType: 'image/png' },
+    { type: 'audio', data: 'AAAA' },
+    { type: 'image', data: 'not base64!', mimeType: 'image/png' },
+    { type: 'video', data: 'AAAA', mimeType: 'video/mp4' },
+  ]) {
+    const reply = await h.request('session/prompt', { sessionId: h.sessionId, prompt: [block] });
+    assert.ok(reply.error, JSON.stringify(block));
+    assert.equal(reply.error.code, -32602);
+  }
+  assert.equal((await h.nativeLog()).filter(value => value.method === 'session/send').length, 0);
+});
+
 test('native turn errors and runtime crashes are not reported as cancellation', async t => {
   const h = await start(t);
   for (const text of ['error', 'crash']) {
