@@ -45,8 +45,19 @@ async function jsonFile(file, optional = false) {
   }
 }
 
+function oauthUserId(record, env) {
+  const family = decryptCredential(record['oauth:active_provider'], env);
+  if (!family) return '';
+  try {
+    const info = JSON.parse(decryptCredential(record[`oauth:${family}:user_info`], env));
+    return typeof info?.user_id === 'string' ? info.user_id.trim() : '';
+  } catch { return ''; }
+}
+
 function apiKeyFromRecord(record, providerId, env) {
-  const identity = decryptCredential(record[`account-provider:${providerId}:identity`], env);
+  // CLI logins write the standalone identity record; desktop logins keep the
+  // identity only inside the OAuth user info, mirroring the desktop app.
+  const identity = decryptCredential(record[`account-provider:${providerId}:identity`], env) || oauthUserId(record, env);
   if (!identity) return '';
   return decryptCredential(record[`account-provider:coding-plan:${providerId}:account:${encodeURIComponent(identity)}:api-key`], env);
 }

@@ -124,6 +124,57 @@ test('runtime auth selects only the requested provider key and rejects malformed
   await assert.rejects(requestAuth(paths, params('account:absent'), env), /ZCode login credentials unavailable/);
 });
 
+test('desktop login user info substitutes for the standalone identity record', async t => {
+  const userId = '4b29cd10-ff5d-447b-ae2e-326f24b67e93';
+  const params = providerId => ({ providerId, modelSelection: { providerId, modelId: 'GLM-5.3' }, accountAccess: { mode: 'individual-coding-plan' } });
+  const paths = await fixture(t, {
+    rules: [rule('account:a'), rule('account:b')],
+    credentials: {
+      'oauth:active_provider': encrypt('zai'),
+      'oauth:zai:user_info': encrypt(JSON.stringify({ user_id: userId, email: 'user@example.test', name: 'User' })),
+      [`account-provider:coding-plan:account:a:account:${encodeURIComponent(userId)}:api-key`]: encrypt('desktop-key-a'),
+      [`account-provider:coding-plan:account:b:account:${encodeURIComponent('other-identity')}:api-key`]: encrypt('desktop-key-b'),
+    },
+  });
+  const snapshot = await accountSnapshot(paths, env);
+  assert.equal(snapshot.config.states['account:a'].entitled, true);
+  assert.equal(snapshot.config.states['account:a'].current, true);
+  assert.equal(snapshot.config.states['account:b'].entitled, false);
+  assert.doesNotMatch(JSON.stringify(snapshot.config), /desktop-key-a|user@example\.test/);
+  assert.deepEqual(await requestAuth(paths, params('account:a'), env), { headersApplied: true, requestAuth: { apiKey: 'desktop-key-a' } });
+  await assert.rejects(requestAuth(paths, params('account:b'), env), /ZCode login credentials unavailable/);
+});
+
+test('standalone identity record takes precedence over desktop user info', async t => {
+  const paths = await fixture(t, {
+    rules: [rule('account:a')],
+    credentials: {
+      'oauth:active_provider': encrypt('zai'),
+      'oauth:zai:user_info': encrypt(JSON.stringify({ user_id: 'desktop-user' })),
+      ...credential('account:a', 'cli-user', 'cli-key-a'),
+      [`account-provider:coding-plan:account:a:account:desktop-user:api-key`]: encrypt('desktop-key-a'),
+    },
+  });
+  const snapshot = await accountSnapshot(paths, env);
+  assert.equal(snapshot.config.states['account:a'].entitled, true);
+  assert.deepEqual(await requestAuth(paths, { providerId: 'account:a', modelSelection: { providerId: 'account:a', modelId: 'GLM-5.3' }, accountAccess: { mode: 'individual-coding-plan' } }, env),
+    { headersApplied: true, requestAuth: { apiKey: 'cli-key-a' } });
+});
+
+test('malformed desktop user info leaves providers unentitled without failing the snapshot', async t => {
+  const paths = await fixture(t, {
+    rules: [rule('account:a'), rule('account:b')],
+    credentials: {
+      'oauth:active_provider': encrypt('zai'),
+      'oauth:zai:user_info': encrypt('not-json'),
+      [`account-provider:coding-plan:account:b:account:${encodeURIComponent('some-user')}:api-key`]: encrypt('unreachable-key-b'),
+    },
+  });
+  const snapshot = await accountSnapshot(paths, env);
+  assert.equal(snapshot.config.states['account:a'].entitled, false);
+  assert.equal(snapshot.config.states['account:b'].entitled, false);
+});
+
 test('malformed credential files fail without exposing file content', async t => {
   const paths = await fixture(t);
   await writeFile(paths.credentials, '{"secret":"do-not-leak-this-test-secret",');
