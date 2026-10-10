@@ -175,6 +175,23 @@ test('malformed desktop user info leaves providers unentitled without failing th
   assert.equal(snapshot.config.states['account:b'].entitled, false);
 });
 
+test('corrupted oauth metadata degrades to unentitled without failing the snapshot', async t => {
+  const encrypted = encrypt('zai');
+  const parts = encrypted.slice('enc:v1:'.length).split('.');
+  const tag = Buffer.from(parts[1], 'base64url');
+  tag[0] ^= 1;
+  const paths = await fixture(t, {
+    rules: [rule('account:a')],
+    credentials: {
+      'oauth:active_provider': `enc:v1:${parts[0]}.${tag.toString('base64url')}.${parts[2]}`,
+      [`account-provider:coding-plan:account:a:account:${encodeURIComponent('user-1')}:api-key`]: encrypt('unreachable-key-a'),
+    },
+  });
+  const snapshot = await accountSnapshot(paths, env);
+  assert.equal(snapshot.config.states['account:a'].entitled, false);
+  assert.doesNotMatch(JSON.stringify(snapshot.config), /unreachable-key-a/);
+});
+
 test('malformed credential files fail without exposing file content', async t => {
   const paths = await fixture(t);
   await writeFile(paths.credentials, '{"secret":"do-not-leak-this-test-secret",');

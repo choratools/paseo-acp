@@ -46,9 +46,9 @@ async function jsonFile(file, optional = false) {
 }
 
 function oauthUserId(record, env) {
-  const family = decryptCredential(record['oauth:active_provider'], env);
-  if (!family) return '';
   try {
+    const family = decryptCredential(record['oauth:active_provider'], env);
+    if (!family) return '';
     const info = JSON.parse(decryptCredential(record[`oauth:${family}:user_info`], env));
     return typeof info?.user_id === 'string' ? info.user_id.trim() : '';
   } catch { return ''; }
