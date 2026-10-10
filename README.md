@@ -70,7 +70,7 @@ Setup adds `choratools-antigravity` and `choratools-zcode` provider entries, bac
 | Model selection | Native catalog when available; inherits `agy` default | Account-aware model catalog |
 | Modes | Standard, Auto Edit, Plan | Build, Edit, Plan, Yolo |
 | Client MCP servers | Not forwarded | Stdio, HTTP, SSE forwarded |
-| Image and audio prompts | Not supported | Not supported |
+| Image and audio prompts | Not supported | Forwarded as native attachments |
 
 **Antigravity** is a community bridge around `agy`. It is separate from Google's own Antigravity ACP integration. Cancelling a prompt or changing its runtime settings can restart the child process; history does not survive that restart.
 

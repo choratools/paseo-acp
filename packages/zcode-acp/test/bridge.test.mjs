@@ -389,6 +389,7 @@ test('image-only and blob-resource prompts are accepted without text', async t =
   assert.equal(imageOnly.result.stopReason, 'end_turn');
   const blob = await h.request('session/prompt', { sessionId: h.sessionId, prompt: [
     { type: 'resource', resource: { uri: 'file:///tmp/report v2.pdf', mimeType: 'application/pdf', blob: 'JVBERi0=' } },
+    { type: 'resource', resource: { uri: 'file:///tmp/clip.mp4', mimeType: 'video/mp4', blob: 'AAAA' } },
   ] });
   assert.equal(blob.error, undefined, JSON.stringify(blob));
   const sends = (await h.nativeLog()).filter(value => value.method === 'session/send');
@@ -396,6 +397,7 @@ test('image-only and blob-resource prompts are accepted without text', async t =
   assert.equal(sends[0].params.attachments.length, 1);
   assert.deepEqual(sends[1].params.attachments, [
     { kind: 'pdf', filename: 'reportv2.pdf', mimeType: 'application/pdf', sizeBytes: Buffer.byteLength('JVBERi0=', 'base64'), dataBase64: 'JVBERi0=' },
+    { kind: 'video', filename: 'clip.mp4', mimeType: 'video/mp4', sizeBytes: 3, dataBase64: 'AAAA' },
   ]);
 });
 

@@ -413,7 +413,8 @@ export class Bridge {
     }
     if (block?.type === 'resource' && typeof block.resource?.blob === 'string' && block.resource.blob.trim()) {
       const mimeType = (typeof block.resource.mimeType === 'string' && block.resource.mimeType.trim()) || 'application/octet-stream';
-      const kind = mimeType.toLowerCase() === 'application/pdf' ? 'pdf' : 'file';
+      const mime = mimeType.toLowerCase();
+      const kind = mime === 'application/pdf' ? 'pdf' : mime.startsWith('video/') ? 'video' : 'file';
       const base = typeof block.resource.uri === 'string' ? decodeURIComponent(new URL(block.resource.uri, 'file:///').pathname.split('/').pop() || '') : '';
       const filename = base.replace(/[^\w.\-]+/g, '').replace(/^[.\-]+/, '') || `resource-${index}`;
       const blob = block.resource.blob.replace(/\s+/g, '');
