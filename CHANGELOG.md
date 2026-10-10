@@ -4,6 +4,8 @@ Notable changes to Paseo ACP are recorded here in reverse chronological order.
 
 ## Unreleased
 
+- Cancel a ZCode prompt that is still waiting on the admission queue, so an
+  immediate cancellation can no longer race the prompt and leave it running.
 - Queue a ZCode follow-up prompt while cancellation of the previous turn is
   completing, avoiding overlapping native prompts (`-32010`). Prompts sent
   without cancelling the active turn continue to return a busy error.
