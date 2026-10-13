@@ -4,6 +4,8 @@ Notable changes to Paseo ACP are recorded here in reverse chronological order.
 
 ## Unreleased
 
+- Cancel a ZCode prompt that is still waiting on the admission queue, so an
+  immediate cancellation can no longer race the prompt and leave it running.
 - Recognize desktop logins for Individual Coding Plan entitlement by falling
   back to the OAuth account's user id when the CLI identity record is absent.
 - Queue a ZCode follow-up prompt while cancellation of the previous turn is

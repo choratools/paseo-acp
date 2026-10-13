@@ -416,10 +416,16 @@ export class Bridge {
     const previous = session.turnQueue;
     let release;
     session.turnQueue = new Promise(resolve => { release = resolve; });
+    // The queue await suspends this request before its turn exists; register
+    // the admission synchronously so a racing cancellation can still reach it.
+    const pending = { cancelled: false };
+    session.pendingPrompt = pending;
     await previous;
     try {
+      if (pending.cancelled) return { stopReason: 'cancelled' };
       return await this.runPrompt(session, content);
     } finally {
+      if (session.pendingPrompt === pending) session.pendingPrompt = null;
       release();
     }
   }
@@ -468,7 +474,13 @@ export class Bridge {
   }
 
   async cancel(session) {
-    if (!session.turn || session.turn.cancelRequested) return {};
+    if (!session.turn) {
+      // The prompt may be admitted but still waiting on the turn queue before
+      // its turn is registered; cancel it there so it never reaches the runtime.
+      if (session.pendingPrompt) session.pendingPrompt.cancelled = true;
+      return {};
+    }
+    if (session.turn.cancelRequested) return {};
     session.turn.cancelRequested = true;
     for (const [id, entry] of this.clientRequests) {
       if (entry.sessionId === session.id) {
