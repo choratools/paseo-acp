@@ -31,6 +31,11 @@ const modes = [
 const own = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const fault = (message, code = -32602) => Object.assign(new Error(message), { code });
+const strictBase64 = (value, label) => {
+  const data = value.replace(/\s+/g, '');
+  if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(data)) throw fault(`Invalid ${label} content block`);
+  return data;
+};
 const textContent = text => ({ type: 'text', text });
 const toolContent = text => [{ type: 'content', content: textContent(text) }];
 const toolKind = name => {
@@ -406,8 +411,7 @@ export class Bridge {
       if (typeof block.data !== 'string' || !block.data.trim() || typeof block.mimeType !== 'string' || !block.mimeType.trim()) {
         throw fault(`Invalid ${block.type} content block`);
       }
-      const data = block.data.replace(/\s+/g, '');
-      if (!/^[A-Za-z0-9+/]*={0,2}$/.test(data)) throw fault(`Invalid ${block.type} content block`);
+      const data = strictBase64(block.data, block.type);
       return { kind: block.type, filename: this.attachmentName(block.type, index, block.mimeType), mimeType: block.mimeType.trim(),
         sizeBytes: Buffer.byteLength(data, 'base64'), dataBase64: data };
     }
@@ -415,9 +419,12 @@ export class Bridge {
       const mimeType = (typeof block.resource.mimeType === 'string' && block.resource.mimeType.trim()) || 'application/octet-stream';
       const mime = mimeType.toLowerCase();
       const kind = mime === 'application/pdf' ? 'pdf' : mime.startsWith('video/') ? 'video' : 'file';
-      const base = typeof block.resource.uri === 'string' ? decodeURIComponent(new URL(block.resource.uri, 'file:///').pathname.split('/').pop() || '') : '';
-      const filename = base.replace(/[^\w.\-]+/g, '').replace(/^[.\-]+/, '') || `resource-${index}`;
-      const blob = block.resource.blob.replace(/\s+/g, '');
+      let base = '';
+      if (typeof block.resource.uri === 'string') {
+        try { base = decodeURIComponent(new URL(block.resource.uri, 'file:///').pathname.split('/').pop() || ''); } catch { base = ''; }
+      }
+      const filename = base.replace(/[^\p{L}\p{N}._-]+/gu, '').replace(/^[.\-]+/, '') || `resource-${index}`;
+      const blob = strictBase64(block.resource.blob, 'resource');
       return { kind, filename, mimeType, sizeBytes: Buffer.byteLength(blob, 'base64'), dataBase64: blob };
     }
     return null;
@@ -578,7 +585,7 @@ export class Bridge {
       case 'initialize':
         if (params.protocolVersion !== 1) throw fault('ACP protocol version 1 is required');
         return { protocolVersion: 1, agentInfo: { name: 'ZCode ACP Bridge', version: '1.0.0' },
-          agentCapabilities: { loadSession: true, promptCapabilities: { embeddedContext: true },
+          agentCapabilities: { loadSession: true, promptCapabilities: { image: true, audio: true, embeddedContext: true },
             sessionCapabilities: { list: {}, close: {}, resume: {} }, mcpCapabilities: { http: true, sse: true } },
           authMethods: [] };
       case 'session/new': return this.open(params);

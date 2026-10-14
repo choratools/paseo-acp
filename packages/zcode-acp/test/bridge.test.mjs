@@ -95,6 +95,7 @@ async function start(t, { directory, create = true, runtimeEnv = {} } = {}) {
   assert.equal(initialized.error, undefined, JSON.stringify(initialized));
   assert.equal(initialized.result.protocolVersion, 1);
   assert.deepEqual(initialized.result.agentCapabilities.mcpCapabilities, { http: true, sse: true });
+  assert.deepEqual(initialized.result.agentCapabilities.promptCapabilities, { image: true, audio: true, embeddedContext: true });
   let created;
   if (create) {
     created = await request('session/new', { cwd: dir, mcpServers: [] });
@@ -384,20 +385,22 @@ test('image and audio prompt blocks are forwarded as native attachments', async 
 
 test('image-only and blob-resource prompts are accepted without text', async t => {
   const h = await start(t);
-  const imageOnly = await h.request('session/prompt', { sessionId: h.sessionId, prompt: [{ type: 'image', data: 'iVBOR', mimeType: 'image/png' }] });
+  const imageOnly = await h.request('session/prompt', { sessionId: h.sessionId, prompt: [{ type: 'image', data: 'iVBORw0=', mimeType: 'image/png' }] });
   assert.equal(imageOnly.error, undefined, JSON.stringify(imageOnly));
   assert.equal(imageOnly.result.stopReason, 'end_turn');
   const blob = await h.request('session/prompt', { sessionId: h.sessionId, prompt: [
-    { type: 'resource', resource: { uri: 'file:///tmp/report v2.pdf', mimeType: 'application/pdf', blob: 'JVBERi0=' } },
+    { type: 'resource', resource: { uri: 'file:///tmp/보고서 v2.pdf', mimeType: 'application/pdf', blob: 'JVBERi0=' } },
     { type: 'resource', resource: { uri: 'file:///tmp/clip.mp4', mimeType: 'video/mp4', blob: 'AAAA' } },
+    { type: 'resource', resource: { uri: 'http://%zz', mimeType: 'text/plain', blob: 'QUJD' } },
   ] });
   assert.equal(blob.error, undefined, JSON.stringify(blob));
   const sends = (await h.nativeLog()).filter(value => value.method === 'session/send');
   assert.equal(sends[0].params.content, ' ');
   assert.equal(sends[0].params.attachments.length, 1);
   assert.deepEqual(sends[1].params.attachments, [
-    { kind: 'pdf', filename: 'reportv2.pdf', mimeType: 'application/pdf', sizeBytes: Buffer.byteLength('JVBERi0=', 'base64'), dataBase64: 'JVBERi0=' },
+    { kind: 'pdf', filename: '보고서v2.pdf', mimeType: 'application/pdf', sizeBytes: Buffer.byteLength('JVBERi0=', 'base64'), dataBase64: 'JVBERi0=' },
     { kind: 'video', filename: 'clip.mp4', mimeType: 'video/mp4', sizeBytes: 3, dataBase64: 'AAAA' },
+    { kind: 'file', filename: 'resource-3', mimeType: 'text/plain', sizeBytes: 3, dataBase64: 'QUJD' },
   ]);
 });
 
@@ -408,6 +411,8 @@ test('malformed media blocks are rejected without reaching the native runtime', 
     { type: 'audio', data: 'AAAA' },
     { type: 'image', data: 'not base64!', mimeType: 'image/png' },
     { type: 'video', data: 'AAAA', mimeType: 'video/mp4' },
+    { type: 'resource', resource: { uri: 'file:///tmp/x.pdf', mimeType: 'application/pdf', blob: 'not base64!' } },
+    { type: 'resource', resource: { uri: 'file:///tmp/x.pdf', mimeType: 'application/pdf', blob: 'A' } },
   ]) {
     const reply = await h.request('session/prompt', { sessionId: h.sessionId, prompt: [block] });
     assert.ok(reply.error, JSON.stringify(block));
