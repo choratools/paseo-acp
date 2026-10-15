@@ -4,6 +4,11 @@ Notable changes to Paseo ACP are recorded here in reverse chronological order.
 
 ## Unreleased
 
+- Forward ACP image, audio, and embedded blob content blocks to the ZCode
+  runtime as native attachments, enabling multimodal prompts. Media-only
+  prompts no longer fail with "Unsupported prompt content".
+- Advertise `image` and `audio` prompt capabilities in the ACP `initialize`
+  response so spec-compliant clients enable their media input UI.
 - Cancel a ZCode prompt that is still waiting on the admission queue, so an
   immediate cancellation can no longer race the prompt and leave it running.
 - Recognize desktop logins for Individual Coding Plan entitlement by falling

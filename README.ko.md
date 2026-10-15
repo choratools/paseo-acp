@@ -70,7 +70,7 @@ paseo-acp setup --provider all
 | 모델 선택 | 조회 가능한 네이티브 목록·`agy` 기본 설정 | 계정 권한에 따른 모델 목록 |
 | 모드 | Standard, Auto Edit, Plan | Build, Edit, Plan, Yolo |
 | 클라이언트 MCP 서버 | 전달 미지원 | Stdio, HTTP, SSE 전달 |
-| 이미지·오디오 프롬프트 | 미지원 | 미지원 |
+| 이미지·오디오 프롬프트 | 미지원 | 네이티브 첨부로 전달 |
 
 **Antigravity**는 `agy`를 연결하는 커뮤니티 어댑터입니다. Google에서 제공하는 Antigravity ACP 통합과는 별도 프로젝트입니다. 취소나 런타임 설정 변경으로 프로세스가 다시 시작되면 이전 대화는 이어지지 않습니다.
 
