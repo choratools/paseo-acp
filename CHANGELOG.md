@@ -14,8 +14,10 @@ Notable changes to Paseo ACP are recorded here in reverse chronological order.
 - Recognize desktop logins for Individual Coding Plan entitlement by falling
   back to the OAuth account's user id when the CLI identity record is absent.
 - Queue a ZCode follow-up prompt while cancellation of the previous turn is
-  completing, avoiding overlapping native prompts (`-32010`). Prompts sent
-  without cancelling the active turn continue to return a busy error.
+  completing, avoiding overlapping native prompts (`-32010`).
+- A ZCode prompt sent while the previous turn is still running now cancels that
+  turn (and any prompt still queued) and runs in its place, instead of
+  returning a `Session is busy` error.
 
 ## 0.1.0 — 2026-10-03
 

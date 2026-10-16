@@ -334,19 +334,32 @@ test('immediate cancellation ends the prompt and permits the next turn', async t
   assert.deepEqual(sends.map(value => value.params.content), ['after-immediate-cancel']);
 });
 
-test('overlapping prompts are rejected and cancel notification has no response', async t => {
+test('a prompt sent during a running turn cancels it and replaces it', async t => {
   const h = await start(t);
   const first = prompt(h, 'slow');
   await waitFor(async () => (await h.nativeLog()).some(value => value.method === 'session/send'));
-  const overlap = await prompt(h, 'overlap');
-  assert.ok(overlap.error);
-  h.send({ jsonrpc: '2.0', method: 'session/cancel', params: { sessionId: h.sessionId } });
+  const replacement = await prompt(h, 'replacement');
   const reply = await first;
   assert.equal(reply.error, undefined, JSON.stringify(reply));
   assert.equal(reply.result.stopReason, 'cancelled');
+  assert.equal(replacement.error, undefined, JSON.stringify(replacement));
+  assert.equal(replacement.result.stopReason, 'end_turn');
   await delay(40);
   assert.equal(h.messages.filter(value => 'result' in value || 'error' in value).some(value => value.id === null || value.id === undefined), false);
-  assert.equal((await h.nativeLog()).filter(value => value.method === 'session/send').length, 1);
+  assert.deepEqual((await h.nativeLog()).filter(value => value.method === 'session/send').map(value => value.params.content), ['slow', 'replacement']);
+});
+
+test('only the latest of several rapid prompts runs', async t => {
+  const h = await start(t, { runtimeEnv: { ZCODE_TEST_STOP_DELAY: '80' } });
+  const first = prompt(h, 'slow');
+  await waitFor(async () => (await h.nativeLog()).some(value => value.method === 'session/send'));
+  const second = prompt(h, 'second');
+  const third = prompt(h, 'third');
+  const [one, two, three] = await Promise.all([first, second, third]);
+  assert.equal(one.result?.stopReason, 'cancelled', JSON.stringify(one));
+  assert.equal(two.result?.stopReason, 'cancelled', JSON.stringify(two));
+  assert.equal(three.result?.stopReason, 'end_turn', JSON.stringify(three));
+  assert.deepEqual((await h.nativeLog()).filter(value => value.method === 'session/send').map(value => value.params.content), ['slow', 'third']);
 });
 
 test('follow-up prompt waits for native cancellation completion', async t => {

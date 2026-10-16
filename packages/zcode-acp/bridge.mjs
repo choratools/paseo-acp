@@ -451,10 +451,12 @@ export class Bridge {
     const { text, attachments } = this.promptParts(params.prompt);
     if (!text.trim() && !attachments.length) throw fault('Prompt is empty');
     const content = text.trim() ? text : ' ';
-    if (session.turn && !session.turn.cancelRequested) throw fault('Session is busy', -32000);
-    // Paseo can submit a follow-up while it is still resolving cancellation of
-    // the previous prompt. Serialize admissions so app-server never receives
-    // session/send while the preceding native turn is active.
+    // A new prompt replaces whatever is in flight: cancel the running turn and
+    // any prompt still waiting for admission. Serialize admissions so app-server
+    // never receives session/send while the preceding native turn is active
+    // (-32010), including follow-ups sent while cancellation is completing.
+    if (session.pendingPrompt) session.pendingPrompt.cancelled = true;
+    if (session.turn && !session.turn.cancelRequested) this.cancel(session).catch(() => {});
     const previous = session.turnQueue;
     let release;
     session.turnQueue = new Promise(resolve => { release = resolve; });
