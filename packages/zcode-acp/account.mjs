@@ -54,12 +54,81 @@ function oauthUserId(record, env) {
   } catch { return ''; }
 }
 
+function oauthAccessToken(record, providerId, env) {
+  const family = providerId === 'account:zai-individual-coding-plan' ? 'zai' : providerId === 'account:bigmodel-individual-coding-plan' ? 'bigmodel' : null;
+  if (!family) return '';
+  return decryptCredential(record[`oauth:${family}:access_token`], env);
+}
+
 function apiKeyFromRecord(record, providerId, env) {
   // CLI logins write the standalone identity record; desktop logins keep the
   // identity only inside the OAuth user info, mirroring the desktop app.
   const identity = decryptCredential(record[`account-provider:${providerId}:identity`], env) || oauthUserId(record, env);
   if (!identity) return '';
+  const authSource = decryptCredential(record[`account-provider:${providerId}:auth-source`], env);
+  if (authSource !== 'manual') {
+    const oauthToken = oauthAccessToken(record, providerId, env);
+    if (oauthToken) return oauthToken;
+  }
   return decryptCredential(record[`account-provider:coding-plan:${providerId}:account:${encodeURIComponent(identity)}:api-key`], env);
+}
+
+async function resolveOauthCodingPlanAuth(record, providerId, env) {
+  const family = providerId === 'account:zai-individual-coding-plan' ? 'zai' : providerId === 'account:bigmodel-individual-coding-plan' ? 'bigmodel' : null;
+  const accessToken = oauthAccessToken(record, providerId, env);
+  const identity = decryptCredential(record[`account-provider:${providerId}:identity`], env) || oauthUserId(record, env) || family;
+  if (!family || !accessToken || !identity) return null;
+  const origin = family === 'zai' ? 'https://api.z.ai' : (env.ZCODE_BIGMODEL_ORIGIN || 'https://bigmodel.cn');
+  let loginToken = accessToken;
+  if (family === 'zai') {
+    const loginRes = await fetch(`${origin}/api/auth/z/login`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: accessToken }), signal: AbortSignal.timeout(15000),
+    });
+    if (!loginRes.ok) throw new Error('ZCode business login failed');
+    const loginJson = await loginRes.json();
+    loginToken = (loginJson?.data?.access_token || loginJson?.data?.accessToken || '').trim();
+    if (!loginToken) throw new Error('ZCode business login returned no token');
+  }
+  const custRes = await fetch(`${origin}/api/biz/customer/getCustomerInfo`, {
+    method: 'GET', headers: { Authorization: loginToken, 'Content-Type': 'application/json' },
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!custRes.ok) throw new Error('ZCode customer info request failed');
+  const custJson = await custRes.json();
+  const orgs = Array.isArray(custJson?.data?.organizations) ? custJson.data.organizations : [];
+  const org = orgs.find(o => o.organizationName?.includes('默认机构')) || orgs[0];
+  const projs = Array.isArray(org?.projects) ? org.projects : [];
+  const proj = projs.find(p => p.projectName?.includes('默认项目')) || projs[0];
+  if (!org?.organizationId || !proj?.projectId) throw new Error('ZCode project unavailable');
+  const keysUrl = `${origin}/api/biz/v1/organization/${encodeURIComponent(org.organizationId)}/projects/${encodeURIComponent(proj.projectId)}/api_keys`;
+  const authHeader = family === 'zai' ? `Bearer ${loginToken}` : loginToken;
+  const keysRes = await fetch(keysUrl, {
+    method: 'GET', headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!keysRes.ok) throw new Error('ZCode API keys request failed');
+  const keysJson = await keysRes.json();
+  let keyEntry = (Array.isArray(keysJson?.data) ? keysJson.data : []).find(k => k?.name === 'zcode-api-key');
+  if (!keyEntry) {
+    const createRes = await fetch(keysUrl, {
+      method: 'POST', headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'zcode-api-key', usageScene: 'coding_plan' }), signal: AbortSignal.timeout(15000),
+    });
+    if (createRes.ok) keyEntry = (await createRes.json())?.data;
+  }
+  const apiKeyId = keyEntry?.apiKey?.trim();
+  if (!apiKeyId) throw new Error('ZCode Coding Plan API key unavailable');
+  const tokenRes = await fetch(`${keysUrl}/${encodeURIComponent(apiKeyId)}/access_tokens`, {
+    method: 'POST', headers: { Authorization: `Bearer ${loginToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ clientType: 'zcode', clientVersion: '0.16.9' }), signal: AbortSignal.timeout(15000),
+  });
+  if (!tokenRes.ok) throw new Error('ZCode project access token request failed');
+  const tokenJson = await tokenRes.json();
+  const projectToken = tokenJson?.data?.accessToken?.trim();
+  if (!projectToken) throw new Error('ZCode project access token empty');
+  const accountScope = createHash('sha256').update(JSON.stringify([providerId, family, identity, accessToken])).digest('hex');
+  return { apiKey: projectToken, apiKeyId, accountScope };
 }
 
 function startPlanJwt(record, providerId, env) {
@@ -121,6 +190,11 @@ export async function requestAuth(paths, params, env = process.env) {
     if (!apiKey) throw new Error('Start Plan requires a connected ZCode account; sign in with the installed ZCode app');
     if (params.reason === 'captcha-retry') throw new Error('Start Plan requires verification in the ZCode desktop app');
     return { headersApplied: true, requestAuth: { apiKey } };
+  }
+  const authSource = decryptCredential(credentials[`account-provider:${providerId}:auth-source`], env);
+  if (authSource !== 'manual' && oauthAccessToken(credentials, providerId, env)) {
+    const oauthAuth = await resolveOauthCodingPlanAuth(credentials, providerId, env);
+    if (oauthAuth) return { headersApplied: true, requestAuth: oauthAuth };
   }
   const apiKey = apiKeyFromRecord(credentials, providerId, env);
   if (!apiKey) throw new Error('ZCode login credentials unavailable; run ZCode login');

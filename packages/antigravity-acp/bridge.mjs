@@ -167,7 +167,9 @@ class AntigravitySession {
   }
 
   args() {
-    const args = ['--print', '--input-format', 'stream-json', '--output-format', 'stream-json', '--disable-slash-commands'];
+    // agy treats --print as a string flag; an explicit empty value selects
+    // print mode without consuming the following flag as the prompt.
+    const args = ['--print=', '--input-format', 'stream-json', '--output-format', 'stream-json', '--disable-slash-commands'];
     if (allowUnsafe) args.push('--dangerously-skip-permissions');
     if (this.mode === 'plan' || this.mode === 'accept-edits') args.push('--mode', this.mode);
     if (this.model !== 'inherit') args.push('--model', this.model);
@@ -185,7 +187,10 @@ class AntigravitySession {
     });
     const generation = ++this.generation;
     this.child = child;
-    child.stderr.resume();
+    let stderrTail = Buffer.alloc(0);
+    child.stderr.on('data', data => {
+      stderrTail = Buffer.concat([stderrTail, data]).subarray(-8192);
+    });
     const lines = readline.createInterface({ input: child.stdout, crlfDelay: Infinity });
     lines.on('line', line => { if (this.child === child && generation === this.generation) this.handleLine(line); });
     child.stdin.on('error', error => { if (this.child === child && generation === this.generation) this.failTurn(error); });
@@ -197,7 +202,10 @@ class AntigravitySession {
       const turn = this.turn;
       if (!turn) return;
       if (turn.cancelRequested || this.closing) this.finish({ stopReason: 'cancelled' });
-      else this.failTurn(fault(`Antigravity CLI exited before completing the turn (${signal || code})`, -32603));
+      else {
+        const detail = stderrTail.toString('utf8').trim();
+        this.failTurn(fault(`Antigravity CLI exited before completing the turn (${signal || code})${detail ? `: ${detail}` : ''}`, -32603));
+      }
     });
   }
 
